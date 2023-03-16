@@ -9,6 +9,9 @@ import shutil
 from typing import Tuple, List
 from MDAnalysis.lib.distances import minimize_vectors
 
+from .utils import search_coord_number
+from ase.geometry import get_distances
+
 
 class Slab(Atoms):
     """
@@ -487,3 +490,79 @@ class RutileSlab(Slab):
         slab = slab[slab.positions.T[2].argsort()]
 
         return slab
+    
+    def divide_terminal_idxs(self, idxs):
+
+        #slab will be create within vacuum
+        #we can divde a series of idxs to  
+        half_z = self.cell[2][2]/2
+        
+        upper_idxs = list(filter(lambda x : self[x].position[2] >= half_z, idxs))
+        bottom_idxs = list(filter(lambda x : self[x].position[2] < half_z, idxs))
+        
+        return bottom_idxs, upper_idxs
+    
+    def rerange_terminal_idxs(self, terminal_idxs, reshape=None, tolerance=0.1):
+        # r_num, c_num to reshape the terminals 
+        slab = self.copy()
+        #tricky: shrink the box to manage the boundary atoms 
+        assert tolerance >= 0
+        old_cell = slab.cell.cellpar()
+        old_cell[0] = old_cell[0] - tolerance
+        old_cell[1] = old_cell[1] - tolerance
+        slab.set_cell(old_cell)
+        slab.pbc = True
+        slab.wrap()
+        
+        terminal_idxs = np.array(terminal_idxs)
+        ter_positions = slab[terminal_idxs].positions
+        
+        reranged = terminal_idxs[np.lexsort(ter_positions.T[:2])] #x，y reorder
+        # reordered by x ,y
+        
+        if reshape:
+            r_num = reshape[0]
+            c_num = reshape[1]
+            reranged = np.reshape(reranged, (r_num, c_num))
+
+        return reranged
+    
+    def get_rutile_metal_termials(self, cutoff=2.6):
+        
+        #TODO: to using the element in slab
+        elements = list(set(self.symbols))
+        elements.remove("O")
+        e_metal = elements.pop()
+        
+        #search the coord 5 terminals 
+        # how to manage other coord atoms
+        return search_coord_number(self, e_metal, "O", cutoff)[5]
+    
+    def find_rutile_metal_terminal_Obr(self, m_terminal_idx):
+        
+        #find the coord 5 terminal O_br idx
+        slab = self
+        #TODO: to using the element in slab
+        elements = list(set(self.symbols))
+        elements.remove("O")
+        e_metal = elements.pop()
+        oxygen_coord_info = search_coord_number(slab, "O", e_metal)
+        
+        Obr_idxs = oxygen_coord_info[2] # find all O_brs
+        dists =slab.get_distances(m_terminal_idx, Obr_idxs, mic=True)
+        #select the two nearby O_br
+        Obr_idxs_two = Obr_idxs[np.argsort(dists)][:2] 
+        
+        # get 
+        terminal = slab[m_terminal_idx]
+        Obr_1 = slab[Obr_idxs_two[0]]
+        Obr_2 = slab[Obr_idxs_two[1]]
+        v1 = get_distances(terminal.position, Obr_1.position, cell=slab.cell, pbc=True)[0][0][0]
+        v2 = get_distances(terminal.position, Obr_2.position, cell=slab.cell, pbc=True)[0][0][0]
+
+        assert v1[0]*v2[0] < 0 # two O_br must be two sides around the terminal Atom 
+        #reorder by the axis-x
+        if v1[0] < v2[0]:
+            return Obr_idxs_two
+        else:
+            return Obr_idxs_two[::-1]
