@@ -11,6 +11,7 @@ from MDAnalysis.lib.distances import minimize_vectors
 
 from .utils import search_coord_number
 from ase.geometry import get_distances
+from ase.build import molecule
 
 
 class Slab(Atoms):
@@ -379,6 +380,19 @@ class RutileSlab(Slab):
         slab.append(x.get_slab(indices=(1, 1, 0), n_layers=i, lateral_repeat=(2, 4)))
     """
 
+    @property
+    def e_metal(self):
+        
+        eles = list(set(self.symbols))
+        eles.remove("O")
+        try:
+            eles.remove("H")
+        except:
+            pass
+        e_metal = eles.pop()
+        return e_metal
+    
+
     def get_slab(self, indices: Tuple[int], n_layers, lateral_repeat: Tuple[int]=(2, 4), vacuum=10.0):
         h, k, l = indices
         entry = str(h)+str(k)+str(l)
@@ -529,10 +543,7 @@ class RutileSlab(Slab):
     
     def get_rutile_metal_termials(self, cutoff=2.6):
         
-        #TODO: to using the element in slab
-        elements = list(set(self.symbols))
-        elements.remove("O")
-        e_metal = elements.pop()
+        e_metal = self.e_metal
         
         #search the coord 5 terminals 
         # how to manage other coord atoms
@@ -542,10 +553,8 @@ class RutileSlab(Slab):
         
         #find the coord 5 terminal O_br idx
         slab = self
-        #TODO: to using the element in slab
-        elements = list(set(self.symbols))
-        elements.remove("O")
-        e_metal = elements.pop()
+
+        e_metal = self.e_metal
         oxygen_coord_info = search_coord_number(slab, "O", e_metal)
         
         Obr_idxs = oxygen_coord_info[2] # find all O_brs
@@ -560,9 +569,568 @@ class RutileSlab(Slab):
         v1 = get_distances(terminal.position, Obr_1.position, cell=slab.cell, pbc=True)[0][0][0]
         v2 = get_distances(terminal.position, Obr_2.position, cell=slab.cell, pbc=True)[0][0][0]
 
-        assert v1[0]*v2[0] < 0 # two O_br must be two sides around the terminal Atom 
-        #reorder by the axis-x
-        if v1[0] < v2[0]:
+        print(Obr_idxs_two)
+        orients = [v1[0]*v2[0] < 0 , v1[1]*v2[1] < 0]# two O_br must be two sides around the terminal Atom 
+        for i, orients in enumerate(orients):
+            if orients:
+                _axis = i
+                break
+        #reorder by the chosen axis
+        if v1[_axis] < v2[_axis]:
             return Obr_idxs_two
         else:
             return Obr_idxs_two[::-1]
+    
+    def get_reranged_terminals_two_sides(self, tolerance=0.1):
+        
+        terminals = self.get_rutile_metal_termials().tolist()
+        bot_idxs, up_idxs  = self.divide_terminal_idxs(terminals)
+        bot_idxs, up_idxs = [self.rerange_terminal_idxs(_idxs, tolerance=tolerance) for _idxs in [bot_idxs, up_idxs]]
+    
+        return (bot_idxs, up_idxs)
+    
+    def add_rutile101_oh_symm(self, rank_idx=0, mode="a", tolerance=0.1):
+        
+        bot_idxs, up_idxs = self.get_reranged_terminals_two_sides(tolerance=tolerance)
+        rank_idx = min(rank_idx, len(bot_idxs))
+
+        tmp = self.copy()
+        tmp = tmp.add_rutile101_oh(terminal_idx=bot_idxs[rank_idx], side="down",mode=mode)
+        tmp = tmp.add_rutile101_oh(terminal_idx=up_idxs[rank_idx], side="up", mode=mode)
+        
+        return tmp
+    
+    def add_rutile101_oh(self, terminal_idx, side, mode="a"):
+        
+        #TODO: same as splited water
+        slab = self
+        assert mode in ("a","b")
+        #build a tempalte oh
+        water = molecule("H2O")
+        water.rotate(90,"x")
+        water.rotate(90,"y")
+        water.rotate(-115,"z")
+        oh = water[:2]
+        
+        O_brs = slab.find_rutile_metal_terminal_Obr(terminal_idx)
+        O_brs = O_brs if mode=="a" else O_brs[::-1]
+        _slab = slab.copy()
+        
+        if side=="up":
+            multi=1
+        else:
+            multi=-1
+            O_brs = O_brs[::-1]
+            oh.rotate(180,"z")
+        O_br = O_brs[0] #choose the O_br to ad H atom
+        
+        _slab = _slab.add_adsorbate(terminal_idx, vertical_dist=2*multi , adsorbate=oh)
+
+        return _slab
+    
+    def add_rutile101_splitted_water_symm(self, rank_idx=0, mode="a", tolerance=0.1):
+        #rank_idx length come from get_reranged_terminals_two_sides length
+        
+        bot_idxs, up_idxs = self.get_reranged_terminals_two_sides(tolerance=tolerance)
+        rank_idx = min(rank_idx, len(bot_idxs))
+
+        tmp = self.copy()
+        tmp = tmp.add_rutile101_splitted_water(terminal_idx=bot_idxs[rank_idx], side="down",mode=mode)
+        tmp = tmp.add_rutile101_splitted_water(terminal_idx=up_idxs[rank_idx], side="up", mode=mode)
+        
+        return tmp
+
+    
+    def add_rutile101_splitted_water(self, terminal_idx, side, mode="a"):
+        
+        slab = self
+        assert mode in ("a","b")
+        #build a tempalte oh
+        water = molecule("H2O")
+        water.rotate(90,"x")
+        water.rotate(90,"y")
+        water.rotate(-115,"z")
+        oh = water[:2]
+        
+        O_brs = slab.find_rutile_metal_terminal_Obr(terminal_idx)
+        O_brs = O_brs if mode=="a" else O_brs[::-1]
+        _slab = slab.copy()
+        
+        if side=="up":
+            multi=1
+        else:
+            multi=-1
+            O_brs = O_brs[::-1]
+            oh.rotate(180,"z")
+        O_br = O_brs[0] #choose the O_br to ad H atom
+        
+        _slab = _slab.add_adsorbate(terminal_idx, vertical_dist=2*multi , adsorbate=oh)
+        _slab = _slab.add_adsorbate(O_br, vertical_dist=1*multi, adsorbate=Atoms("H"))
+        
+        return _slab
+    
+    def add_rutile101_surface_water_covered(self, height=2.5, mode="a", tolerance=0.1):
+    
+        bot_idxs, up_idxs = self.get_reranged_terminals_two_sides(tolerance=tolerance)
+        ranks = len(bot_idxs)
+        
+        tmp = self.copy()
+        for rank_idx in range(ranks):
+            tmp = tmp.add_rutile101_surface_water(terminal_idx=bot_idxs[rank_idx], side="down",mode=mode, height=height)
+            tmp = tmp.add_rutile101_surface_water(terminal_idx=up_idxs[rank_idx], side="up", mode=mode, height=height)
+        
+        return tmp 
+    
+    
+    def add_rutile101_surface_water(self, terminal_idx, side, mode="a", height=2.5):
+                
+        _slab = self.copy()
+        
+        water = molecule("H2O")
+        water.rotate(90,"x")
+        water.rotate(90,"y")
+        water.rotate(170,"z")
+        if mode == "b":
+            water.rotate(205,"z")
+        
+        if side=="up":
+            multi=1
+        else:
+            multi=-1
+            water.rotate(180,"z")
+        
+        _slab = _slab.add_adsorbate(terminal_idx, vertical_dist=height*multi , adsorbate=water)
+        
+        return _slab
+    
+    def add_rutile100_oh_symm(self, rank_idx=0, mode="a", tolerance=0.1):
+        
+        bot_idxs, up_idxs = self.get_reranged_terminals_two_sides(tolerance=tolerance)
+        rank_idx = min(rank_idx, len(bot_idxs))
+
+        tmp = self.copy()
+        tmp = tmp.add_rutile100_oh(terminal_idx=bot_idxs[rank_idx], side="down",mode=mode)
+        tmp = tmp.add_rutile100_oh(terminal_idx=up_idxs[rank_idx], side="up", mode=mode)
+        
+        return tmp
+    
+    def add_rutile100_oh(self, terminal_idx, side, mode="a"):
+        
+        slab = self
+        
+        assert mode in ("a","b")
+        #build a tempalte oh
+        water = molecule("H2O")
+        water.rotate(90,"x")
+        water.rotate(90,"y")
+        water.rotate(180,"z")
+        
+        if mode == "a":
+            oh = water[:2]
+        if mode == "b":
+            water.rotate(175,"z")
+            oh = water[[0,2]]
+        
+        #oh = water
+        print(terminal_idx)
+        O_brs = slab.find_rutile_metal_terminal_Obr(terminal_idx)
+        if side=="down":
+            O_brs=O_brs[::-1]
+        O_br = O_brs[0] if mode=="a" else O_brs[1]
+        
+        #找到对称的位点 O_far 取负shift
+        O_idxs = np.where(slab.symbols=="O")[0]
+        dists =slab.get_distances(terminal_idx, O_idxs, mic=True)
+        O_idxs_ard = O_idxs[np.argsort(dists)][:5]
+        shift = np.array([0.,0.,0.])
+        for idx in O_idxs_ard:
+            shift -= get_distances(slab.positions[terminal_idx], slab.positions[idx], 
+                                cell=slab.cell, pbc=slab.pbc)[0][0][0]    
+        
+        _slab = slab.copy()
+        #_slab.extend(Atoms("N",positions=[_slab[terminal_idx].position+shift]))
+        if side=="up":
+            multi=1
+        else:
+            multi=-1
+            oh.rotate(180,"z")
+        #print(multi) 
+        _slab = _slab.add_adsorbate(terminal_idx, vertical_dist=shift[2], adsorbate=oh, lateral_shift=shift[:2])
+        
+        return _slab
+    
+    
+    def add_rutile100_splitted_water_symm(self, rank_idx=0, mode="a", tolerance=0.1):
+        #rank_idx length come from get_reranged_terminals_two_sides length
+        
+        bot_idxs, up_idxs = self.get_reranged_terminals_two_sides(tolerance=tolerance)
+        rank_idx = min(rank_idx, len(bot_idxs))
+        
+        tmp = self.copy()
+        #TODO: 此处特例:  rutile100建水 down,mode=a 与up, mode=b才是对称，因为构造的方法是相反的
+        # 构造方法有待重构
+        tmp = tmp.add_rutile100_splitted_water(terminal_idx=bot_idxs[rank_idx], side="down",mode="a")
+        tmp = tmp.add_rutile100_splitted_water(terminal_idx=up_idxs[rank_idx], side="up", mode="b")
+        
+        return tmp
+    
+    
+    def add_rutile100_splitted_water(self, terminal_idx, side, mode="a"):
+        
+        slab = self
+        
+        assert mode in ("a","b")
+        #build a tempalte oh
+        water = molecule("H2O")
+        water.rotate(90,"x")
+        water.rotate(90,"y")
+        water.rotate(180,"z")
+        
+        if mode == "a":
+            oh = water[:2]
+        if mode == "b":
+            water.rotate(175,"z")
+            oh = water[[0,2]]
+        
+        #oh = water
+        print(terminal_idx)
+        O_brs = slab.find_rutile_metal_terminal_Obr(terminal_idx)
+        if side=="down":
+            O_brs=O_brs[::-1]
+        O_br = O_brs[0] if mode=="a" else O_brs[1]
+        
+        #找到对称的位点 O_far 取负shift
+        O_idxs = np.where(slab.symbols=="O")[0]
+        dists =slab.get_distances(terminal_idx, O_idxs, mic=True)
+        O_idxs_ard = O_idxs[np.argsort(dists)][:5]
+        shift = np.array([0.,0.,0.])
+        for idx in O_idxs_ard:
+            shift -= get_distances(slab.positions[terminal_idx], slab.positions[idx], 
+                                cell=slab.cell, pbc=slab.pbc)[0][0][0]    
+        
+        _slab = slab.copy()
+        #_slab.extend(Atoms("N",positions=[_slab[terminal_idx].position+shift]))
+        if side=="up":
+            multi=1
+        else:
+            multi=-1
+            oh.rotate(180,"z")
+        #print(multi) 
+        _slab = _slab.add_adsorbate(terminal_idx, vertical_dist=shift[2], adsorbate=oh, lateral_shift=shift[:2])
+        _slab = _slab.add_adsorbate(O_br, vertical_dist=1*multi, adsorbate=Atoms("H"),)
+        
+        return _slab
+    
+    
+    def add_rutile100_surface_water_covered(self, mode="a" , tolerance=0.1):
+    
+        bot_idxs, up_idxs = self.get_reranged_terminals_two_sides(tolerance=tolerance)
+        ranks = len(bot_idxs)
+        
+        tmp = self.copy()
+        for rank_idx in range(ranks):
+            tmp = tmp.add_rutile100_surface_water(terminal_idx=bot_idxs[rank_idx], side="down",mode=mode)
+            tmp = tmp.add_rutile100_surface_water(terminal_idx=up_idxs[rank_idx], side="up", mode=mode)
+        
+        return tmp
+    
+    
+    def add_rutile100_surface_water(self, terminal_idx, side, mode="a"):
+
+        slab = self.copy()
+        
+        assert mode in ("a","b")
+        #build a tempalte h2o
+        water = molecule("H2O")
+        # water.rotate(90,"x")
+        # water.rotate(90,"y")
+        water.rotate(180,"x")
+        water.rotate(180,"z")
+        
+        # if mode != "a":
+        #     water.rotate(180,"z")
+        
+        #oh = water
+        
+        #找到对称的位点 O_far 取负shift
+        O_idxs = np.where(slab.symbols=="O")[0]
+        dists =slab.get_distances(terminal_idx, O_idxs, mic=True)
+        O_idxs_ard = O_idxs[np.argsort(dists)][:5]
+        shift = np.array([0.,0.,0.])
+        for idx in O_idxs_ard:
+            shift -= get_distances(slab.positions[terminal_idx], slab.positions[idx], 
+                                cell=slab.cell, pbc=slab.pbc)[0][0][0]    
+        _slab = slab.copy()
+        #_slab.extend(Atoms("N",positions=[_slab[terminal_idx].position+shift]))
+        if side!="up":
+            water.rotate(180,"x")
+        
+        _slab = _slab.add_adsorbate(terminal_idx, vertical_dist=shift[2], adsorbate=water, lateral_shift=shift[:2])
+            
+        return _slab
+
+
+class HaliteSlab(Slab):
+    
+    @property
+    def e_metal(self):
+        
+        eles = list(set(self.symbols))
+        eles.remove("O")
+        try:
+            eles.remove("H")
+        except:
+            pass
+        e_metal = eles.pop()
+        return e_metal
+    
+    @classmethod
+    def get_slab(cls, primitive, indices: tuple, n_layers, lateral_repeat: tuple=(3, 4), vacuum=10.0):
+        h, k, l = indices
+        entry = str(h)+str(k)+str(l)
+        method_entry = {
+            "100":cls.halite_slab_100,
+            "110": cls.halite_slab_110,
+            #"111":self.halite_slab_111,
+        }
+        
+        method = method_entry.get(entry, None)
+        if method is None:
+            raise ValueError("Current Miller Index has not implemented yet")
+
+        slab = method(primitive=primitive, n_layers=n_layers, lateral_repeat=lateral_repeat, vacuum=vacuum)
+
+        return slab
+    
+    @classmethod
+    def halite_slab_100(cls, primitive, n_layers=5, lateral_repeat: tuple=(2, 4), vacuum=10.0):
+        
+        _surface = surface(primitive, (1, 0, 0), n_layers, vacuum)
+        _surface = cls(_surface)
+        for i in range(n_layers):
+            _surface = _surface.del_surf_layer(tolerance=0.1, dsur='up')
+        
+        if vacuum is not None:
+            _surface.center(vacuum=vacuum, axis=2)
+        
+        _slab = _surface * (lateral_repeat[0], lateral_repeat[1], 1)
+        _slab.indices = "100"
+        _slab.primitive = primitive
+        _slab.n_layers = n_layers
+        _slab.lateral_repeat = lateral_repeat
+        return _slab
+    
+    @classmethod
+    def halite_slab_110(cls, primitive, n_layers=5, lateral_repeat: tuple=(2, 4), vacuum=10.0):
+        
+        _surface = surface(primitive, (1, 1, 0), n_layers, vacuum=0)
+        _surface = cls(_surface)
+        for i in range(n_layers):
+            _surface = _surface.del_surf_layer(tolerance=0.1, dsur='up')
+        if vacuum is not None:
+            _surface.center(vacuum=vacuum, axis=2)
+    
+        _slab = _surface * (lateral_repeat[0], lateral_repeat[1], 1)
+        
+        #TODO: 以后整理到init
+        _slab.indices = "110"
+        _slab.primitive = primitive
+        _slab.n_layers = n_layers
+        _slab.lateral_repeat = lateral_repeat
+        return _slab
+
+    
+#     def halite_slab_111(self, n_layers=5, lateral_repeat: tuple=(2, 4), vacuum=10.0):
+        
+#         _surface = surface(self, (1, 1, 1), n_layers, vacuum=0)
+
+#         for i in range(n_layers):
+#             _surface = _surface.del_surf_layer(tolerance=0.1, dsur='up')
+        
+#         if vacuum is not None:
+#             _surface.center(vacuum=vacuum, axis=2)
+        
+#         return _surface #* (lateral_repeat[0], lateral_repeat[1], 1)
+    
+    def divide_terminal_idxs(self, idxs):
+
+        #slab will be create within vacuum
+        #we can divde a series of idxs to  
+        half_z = self.cell[2][2]/2
+        
+        upper_idxs = list(filter(lambda x : self[x].position[2] >= half_z, idxs))
+        bottom_idxs = list(filter(lambda x : self[x].position[2] < half_z, idxs))
+        
+        return bottom_idxs, upper_idxs
+    
+    def rerange_terminal_idxs(self, terminal_idxs, reshape=None, tolerance=0.1):
+        # r_num, c_num to reshape the terminals 
+        slab = self.copy()
+        #tricky: shrink the box to manage the boundary atoms 
+        assert tolerance >= 0
+        old_cell = slab.cell.cellpar()
+        old_cell[0] = old_cell[0] - tolerance
+        old_cell[1] = old_cell[1] - tolerance
+        slab.set_cell(old_cell)
+        slab.pbc = True
+        slab.wrap()
+        
+        terminal_idxs = np.array(terminal_idxs)
+        ter_positions = slab[terminal_idxs].positions
+        
+        reranged = terminal_idxs[np.lexsort(ter_positions.T[:1])] #x，y reorder
+        # reordered by x ,y
+        
+        if reshape:
+            r_num = reshape[0]
+            c_num = reshape[1]
+            reranged = np.reshape(reranged, (r_num, c_num))
+
+        return reranged
+
+    def get_halite_metal_termials(self, cutoff=2.6):
+        
+        e_metal = self.e_metal
+        
+        #search the coord 5 terminals 
+        # how to manage other coord atoms
+        return search_coord_number(self, e_metal, "O", cutoff)[4]
+    
+    
+    def get_adsorb_sites(self, dsur):
+        n_layers = self.n_layers+3
+        tmp = self.get_slab(self.primitive, 
+                            indices=self.indices, 
+                            n_layers=n_layers,
+                            lateral_repeat=self.lateral_repeat)
+        tmp = tmp.del_surf_layer(element=self.e_metal,dsur="dw")
+        tmp = tmp.del_surf_layer(element="O",dsur="dw")
+        #tricky
+        tmp.cell = self.cell
+        tmp.center(axis=2)
+        tmp = tmp.del_surf_layer(element=self.e_metal,dsur="up")
+        tmp = tmp.del_surf_layer(element=self.e_metal,dsur="dw")
+
+#         idxs = tmp.positions[tmp.find_surf_idx(element="O", dsur=dsur)]
+        return tmp.positions[tmp.find_surf_idx(element="O", dsur=dsur)]
+
+    
+    def get_halite100_splitted_water_symm(self,rank_idx=4,mode="a"):
+        
+        tmp = self.copy()
+        wat_up = self.get_halite100_splitted_water(dsur="up",rank_idx=rank_idx, mode=mode)[-3:]
+        wat_dw = self.get_halite100_splitted_water(dsur="dw",rank_idx=rank_idx, mode=mode)[-3:]
+        tmp.extend(wat_up)
+        tmp.extend(wat_dw)
+        return tmp
+    
+    def get_halite100_splitted_water(self, dsur="up", rank_idx=4, mode="a"):
+        
+        h2o_lie = molecule("H2O")
+        h2o_lie.rotate(90, 'y')
+        h2o_lie.rotate(45, 'z')
+        h2o_lie.rotate(180, 'z')
+        oh = h2o_lie[:2]
+        
+        if dsur =="up":
+            multi=1
+        else:
+            oh.rotate(180, 'z')
+            multi=-1
+        
+        if mode !="a":
+            oh.rotate(180,'z')
+        
+        
+        pos = self.get_adsorb_sites(dsur=dsur)
+        pos = pos[np.lexsort(pos.T[:2])] #x，y reorder
+        rank_idx = min(len(pos), rank_idx)
+        _pos = pos[rank_idx]
+        print(_pos)
+        #根据位点找到最近的4个氧 即为情况
+        o_idxs = np.where(self.symbols == "O")[0]
+        dist = get_distances(_pos, self.positions[o_idxs], self.cell, self.pbc)[1][0]
+        o4_idxs = o_idxs[np.argsort(dist)[:4]]
+        #按照x 方向对向量排序
+        vs = get_distances(_pos, self.positions[o4_idxs], self.cell, self.pbc)[0][0].tolist()
+        _sort = [_v[0] for _v in vs]
+        _sort = np.argsort(_sort)
+
+        #目前只取两个idx
+        o2_idxs = [o4_idxs[_sort[0]],o4_idxs[_sort[-1]]]
+        
+        o_idx = o2_idxs[0]
+        if mode != "a":
+            o2_idxs = o2_idxs[::-1]
+        if dsur !="up":
+            o2_idxs = o2_idxs[::-1]
+        o_idx = o2_idxs[0]
+
+        dummy = Atoms("X",positions=[_pos])
+        _slab = self.copy()
+        _slab.extend(dummy)
+        dummy_idx = len(_slab)-1
+        _slab = _slab.add_adsorbate(dummy_idx, vertical_dist=0, adsorbate=oh)
+        _slab = _slab.add_adsorbate(o_idx, vertical_dist=1*multi, adsorbate=Atoms("H"))
+        del _slab[dummy_idx]
+        return _slab
+
+    def get_halite110_splitted_water_symm(self,rank_idx=4,mode="a"):
+        
+        tmp = self.copy()
+        wat_up = self.get_halite110_splitted_water(dsur="up",rank_idx=rank_idx, mode=mode)[-3:]
+        wat_dw = self.get_halite110_splitted_water(dsur="dw",rank_idx=rank_idx, mode=mode)[-3:]
+        tmp.extend(wat_up)
+        tmp.extend(wat_dw)
+        return tmp
+    
+    def get_halite110_splitted_water(self, dsur="up", rank_idx=4, mode="a"):
+
+        h2o_lie = molecule("H2O")
+        h2o_lie.rotate(90, 'y')
+        h2o_lie.rotate(45, 'z')
+        h2o_lie.rotate(180, 'z')
+        oh = h2o_lie[:2]
+        
+        if dsur =="up":
+            multi=1
+        else:
+            oh.rotate(180, 'z')
+            multi=-1
+        
+        if mode !="a":
+            oh.rotate(180,'z')
+        
+        pos = self.get_adsorb_sites(dsur=dsur)
+        pos = pos[np.lexsort(pos.T[:2])] #x，y reorder
+        rank_idx = min(len(pos), rank_idx)
+        _pos = pos[rank_idx]
+        print(_pos)
+        #根据位点找到最近的4个氧 即为情况
+        o_idxs = np.where(self.symbols == "O")[0]
+        dist = get_distances(_pos, self.positions[o_idxs], self.cell, self.pbc)[1][0]
+        o4_idxs = o_idxs[np.argsort(dist)[:4]]
+        #按照x 方向对向量排序
+        vs = get_distances(_pos, self.positions[o4_idxs], self.cell, self.pbc)[0][0].tolist()
+        _sort = [sum([_v[0], _v[1]]) for _v in vs]
+        _sort = np.argsort(_sort)
+        #目前只取两个idx
+        o2_idxs = [o4_idxs[_sort[0]],o4_idxs[_sort[-1]]]
+        
+        
+        if mode != "a":
+            o2_idxs = o2_idxs[::-1]
+        if dsur !="up":
+            o2_idxs = o2_idxs[::-1]
+        o_idx = o2_idxs[0]
+
+        dummy = Atoms("X",positions=[_pos])
+        _slab = self.copy()
+        _slab.extend(dummy)
+        dummy_idx = len(_slab)-1
+        _slab = _slab.add_adsorbate(dummy_idx, vertical_dist=0, adsorbate=oh)
+        _slab = _slab.add_adsorbate(o_idx, vertical_dist=1*multi, adsorbate=Atoms("H"))
+        del _slab[dummy_idx]
+        
+        
+        return _slab
