@@ -10,7 +10,12 @@ from ase.neighborlist import neighbor_list
 from ecflow_bandalign.tools.slab import divide_terminal_idxs, rerange_terminal_idxs
 
 
+def get_uniform_idxs(nsample, num=1):
+    import numpy as np
+    assert nsample>=num
+    indices = np.linspace(start=0, stop=nsample, num=num, endpoint=False, dtype=int)
 
+    return indices
 
 def rotate_water_to_position(water, position,):
     
