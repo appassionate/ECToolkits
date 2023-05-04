@@ -15,19 +15,29 @@ class Sphalerite(Slab):
     
     def copy(self):
         
-        spha = Slab.copy(self)
-        spha.negative = self.negative
-        spha.positive = self.positive
+        _slab = Slab.copy(self)
+        _slab.negative = self.negative
+        _slab.positive = self.positive
     
-        return spha
+        return _slab
     
-    @property
-    def get_slab_method(self):
+    def _reset_spha_attri(self, negative=None, positive=None):
         
-        return {
-            "100":None,
-            "110":self._get_slab110,
-        }
+        if negative:
+            self.negative = negative
+        if positive:
+            self.positive = positive
+    
+    
+    # @property
+    # def get_slab_method(self):
+        
+    #     return {
+    #         "100":None,
+    #         "110":self._get_slab110,
+    #     }
+    
+
     
     @classmethod
     def _slab110(cls, primitive, n_layers=5, lateral_repeat: tuple=(2, 4), vacuum=10.0):
@@ -42,13 +52,22 @@ class Sphalerite(Slab):
         _slab = _surface * (lateral_repeat[0], lateral_repeat[1], 1)
         
         #TODO: 以后整理到init
-        _slab.indices = "110"
-        _slab.primitive = primitive
-        _slab.n_layers = n_layers
-        _slab.lateral_repeat = lateral_repeat
+        _slab._reset_slab_attri(
+            primitive=primitive,
+            indices="110",
+            n_layers=n_layers,
+            lateral_repeat=lateral_repeat,
+            
+        )
         return _slab
 
-    def _slab110_surface_water(self, position, side, mode, height=0):
+    def _slab110_adsorb_site(self):
+        return NotImplementedError()
+
+    def _slab110_split_water(self):
+        return NotImplementedError()
+    
+    def _slab110_water_on_surface(self, position, side, mode, height=0):
         
         _slab = self.copy()
         
@@ -93,7 +112,10 @@ class Sphalerite(Slab):
 
         return slab
     
+    #TODO: it might be different in indices diff.
     def get_adsorb_sites(self, dsur):
+        
+        #这个实现对于110适用， 其他面暂时未开发        
         n_layers = self.n_layers+3
         tmp = self.get_slab(self.primitive, 
                             indices=self.indices, 
@@ -112,17 +134,24 @@ class Sphalerite(Slab):
         return (pos, idxs)
         #return tmp
     
-    def _get_surface_water(self, position, side, mode, height=0):
+    def _get_water_on_surface(self, position, side, mode, height=0):
         
-        #TODO
-        #more interface imple need 
-        water = self._slab110_surface_water(position=position, 
+        #TODO #more interface imple need 
+        #TODO: make it as an entry
+        water = self._slab110_water_on_surface(position=position, 
                                             side=side, mode=mode, 
                                             height=height)
         
         return water
     
+    def get_water_on_surface_covered(self, height=0, mode="a"):
+        
+        return self.get_surface_water_covered(height=height, mode=mode)
+    #TODO: -> get_water_on_surface_covered
     def get_surface_water_covered(self, height=0, mode="a"):
+        
+        #TODO
+        #more interface imple need 
         
         pos_dw = self.get_adsorb_sites("dw")[0] #just use pos
         pos_up = self.get_adsorb_sites("up")[0]
@@ -130,10 +159,22 @@ class Sphalerite(Slab):
         waters = self[:0]
         for _pos in pos_up:
             print(_pos)
-            _wat = self._get_surface_water(_pos, side="up", mode=mode, height=height)
+            _wat = self._get_water_on_surface(_pos, side="up", mode=mode, height=height)
             waters.extend(_wat)
         for _pos in pos_dw:
-            _wat = self._get_surface_water(_pos, side="dw", mode=mode, height=height)
+            _wat = self._get_water_on_surface(_pos, side="dw", mode=mode, height=height)
             waters.extend(_wat)
         
         return waters
+    
+    def get_slab_water_on_surface_covered(self, height=0, mode="a"):
+        
+        tmp = self.copy()
+        wats = self.get_water_on_surface_covered(height=height, mode=mode)
+        
+        return tmp + wats
+    
+    def get_water_split_symm(self):
+        return NotImplementedError()
+    def get_slab_water_split_symm(self):
+        return NotImplementedError()

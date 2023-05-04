@@ -42,11 +42,16 @@ class Slab(Atoms):
 
         return slab
     
-    def set_slab_attri(self, indices=None, primitive=None, n_layers=None, lateral_repeat=None):
-        self.indices = self.indices
-        self.primitive = self.primitive
-        self.n_layers = self.n_layers
-        self.lateral_repeat = self.lateral_repeat
+    def _reset_slab_attri(self, indices=None, primitive=None, n_layers=None, lateral_repeat=None):
+        
+        if indices:
+            self.indices = indices
+        if primitive:
+            self.primitive = primitive
+        if n_layers:
+            self.n_layers = n_layers
+        if lateral_repeat:
+            self.lateral_repeat = lateral_repeat
         
     
     def get_cus(self, input_idx, coord_num, cutoff):
