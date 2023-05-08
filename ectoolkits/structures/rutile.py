@@ -341,7 +341,7 @@ class Rutile(Slab):
         
         return _slab[-3:]
     
-    def _slab101_water_on_surface(self, terminal_idx, dsur, mode="a", height=2.5):
+    def _slab101_water_on_surface(self, terminal_idx, dsur, mode="a", height=2.2):
         
         #TODO: 与sphalite的输入参数形式不一致， 这里需要的是idx 而不是位置
         # 原因在这里根据金属位点 寻找的O位点， 而不是直接知道O的位置
@@ -488,7 +488,7 @@ class Rutile(Slab):
         entries = {
             "100":self._slab100_water_split,
             "110":self._slab110_water_split,
-            "101":self._salb101_water_split,
+            "101":self._slab101_water_split,
         }
 
         _method = entries[entry]
