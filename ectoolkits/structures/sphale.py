@@ -38,7 +38,6 @@ class Sphalerite(Slab):
     #     }
     
 
-    
     @classmethod
     def _slab110(cls, primitive, n_layers=5, lateral_repeat: tuple=(2, 4), vacuum=10.0):
         
@@ -158,13 +157,12 @@ class Sphalerite(Slab):
         
         waters = self[:0]
         for _pos in pos_up:
-            print(_pos)
             _wat = self._get_water_on_surface(_pos, side="up", mode=mode, height=height)
             waters.extend(_wat)
         for _pos in pos_dw:
             _wat = self._get_water_on_surface(_pos, side="dw", mode=mode, height=height)
             waters.extend(_wat)
-        
+        print(f"get {len(waters)//3} waters covered on the surface")
         return waters
     
     def get_slab_water_on_surface_covered(self, height=0, mode="a"):
