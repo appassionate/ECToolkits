@@ -153,8 +153,10 @@ class Rutile(Slab):
         O_idxs_ard = O_idxs[np.argsort(dists)][:5]
         shift = np.array([0.,0.,0.])
         for idx in O_idxs_ard:
-            shift -= get_distances(slab.positions[terminal_idx], slab.positions[idx], 
-                                cell=slab.cell, pbc=slab.pbc)[0][0][0]    
+            shift -= get_distances(slab.positions[terminal_idx], 
+                                   slab.positions[idx], 
+                                   cell=slab.cell, 
+                                   pbc=slab.pbc)[0][0][0]    
         _slab = slab.copy()
         #_slab.extend(Atoms("N",positions=[_slab[terminal_idx].position+shift]))
         if dsur!="up":
@@ -214,8 +216,38 @@ class Rutile(Slab):
             
         return wat
     
-    def _slab110_water_on_surface():
-        return NotImplementedError()
+    def _slab110_water_on_surface(self, terminal_idx, dsur, **kwargs):
+        
+        #暂不实现mode=a,b
+        slab = self.copy()
+        #assert mode in ("a","b")
+        #build a tempalte h2o
+        water = molecule("H2O")
+        water.rotate(90,"x")
+        water.rotate(90,"y")
+        water.rotate(38,"z")
+        
+        
+        #oh = water
+        
+        #找到对称的位点 O_far 取负shift
+        O_idxs = np.where(slab.symbols=="O")[0]
+        dists =slab.get_distances(terminal_idx, O_idxs, mic=True)
+        O_idxs_ard = O_idxs[np.argsort(dists)][:5]
+        shift = np.array([0.,0.,0.])
+        for idx in O_idxs_ard:
+            shift -= get_distances(slab.positions[terminal_idx], 
+                                   slab.positions[idx], 
+                                   cell=slab.cell, 
+                                   pbc=slab.pbc)[0][0][0]    
+        _slab = slab.copy()
+        #_slab.extend(Atoms("N",positions=[_slab[terminal_idx].position+shift]))
+        if dsur!="up":
+            water.rotate(180,"x")
+        
+        _slab = _slab.add_adsorbate(terminal_idx, vertical_dist=shift[2], adsorbate=water, lateral_shift=shift[:2])
+        
+        return _slab[-3:]
 
     def _slab110_split_water_in_converage(self, coverage_percent=0.5, ):
         
