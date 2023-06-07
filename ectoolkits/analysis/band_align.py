@@ -38,7 +38,7 @@ class BandAlign():
 
     _extended_summary_
     """
-    def __init__(self, inp: dict):
+    def __init__(self, inp):
         """
         input neccesary argument.
 
@@ -47,6 +47,28 @@ class BandAlign():
         Args:
             inp (dict): _description_
         """
+        
+        self.inp = inp
+        self.input_type = inp.get("input_type")
+        
+        self.cache_pav_x_dict = {}
+        self.cache_pav_dict = {}
+        self.cache_mav_x_dict = {}
+        self.cache_mav_dict = {}
+        self.cache_frame_dict = {}
+
+        pass
+    
+    def reset_input(self, new_inp):
+        self.inp = new_inp
+        self.input_type = new_inp.get("input_type")
+
+    def run(self, new_input=None):  #run method
+        
+        if new_input:
+           self.reset_input(new_input) 
+        
+        inp = self.inp
         self.input_type = inp.get("input_type")
         fancy_print("The following is input you have")
         print(inp)
@@ -65,8 +87,15 @@ class BandAlign():
         self.water_cent_list, self.solid_cent_list = self.get_cent_list()
         self.water_hartree_list = self.get_water_hartree()
         self.solid_hartree_list = self.get_solid_hartree()
+        
 
 
+    def dump_pickle(self, filename:str="bandalign.pkl"):
+        
+        import pickle
+        with open(filename, "wb") as f:
+            pickle.dump(self, f)
+        
 
     def plot_hartree_per_width(self, part='solid'):
         if part == 'solid':
@@ -180,25 +209,43 @@ class BandAlign():
         return pav_x_list, pav_list, mav_x_list, mav_list, traj
 
     def get_pav_mav_traj_list_from_cube(self, prefix, index, l1, l2=0, ncov=2, save=True, axis='z', save_path="."):
+        
         pav_x_list = []
         pav_list = []
         mav_x_list = []
         mav_list = []
         traj = []
         for idx in range(*index):
-            cube = Cp2kCube(f"{prefix}{idx}.cube")
-
-            x, pav = cube.get_pav(interpolate=True)
-            pav_x_list.append(x)
+            
+            #cached, then load it.
+            if idx in self.cache_pav_x_dict.keys():
+                
+                pav_x, pav = self.cache_pav_x_dict[idx], self.cache_pav_dict[idx]
+                mav_x, mav = self.cache_mav_x_dict[idx], self.cache_mav_dict[idx]
+                stc = self.cache_frame_dict[idx]
+                
+                print(f"process cached cube {idx} finished", end="\r")
+                
+            #not cached, then get it and cache it.
+            else:
+                cube = Cp2kCube(f"{prefix}{idx}.cube")
+                pav_x, pav = cube.get_pav(interpolate=True)
+                mav_x, mav = cube.get_mav(l1=l1, l2=l2, ncov=ncov, interpolate=True)
+                stc = cube.get_stc()
+                
+                #caching
+                self.cache_pav_x_dict[idx], self.cache_pav_dict[idx] = pav_x, pav
+                self.cache_mav_x_dict[idx], self.cache_mav_dict[idx] = mav_x, mav
+                self.cache_frame_dict[idx] = stc
+                
+            pav_x_list.append(pav_x)
             pav_list.append(pav)
-
-            x, mav = cube.get_mav(l1=l1, l2=l2, ncov=ncov, interpolate=True)
-            mav_x_list.append(x)
+            
+            mav_x_list.append(mav_x)
             mav_list.append(mav)
-
-            stc = cube.get_stc()
             traj.append(stc)
             print(f"process cube {idx} finished", end="\r")
+        
         pav_x_list = np.array(pav_x_list)
         pav_list = np.array(pav_list)
         mav_x_list = np.array(mav_x_list)
